@@ -1,8 +1,12 @@
 ﻿using System;
+using System.Text.Encodings.Web;
+using System.Text.Unicode;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.WebEncoders;
 using Serilog;
 using Serilog.Events;
 
@@ -10,47 +14,31 @@ namespace search.Web;
 
 public class Program
 {
-    public async static Task<int> Main(string[] args)
+    public static async Task Main(string[] args)
     {
-        Log.Logger = new LoggerConfiguration()
-#if DEBUG
-            .MinimumLevel.Debug()
-#else
-            .MinimumLevel.Information()
-#endif
-            .MinimumLevel.Override("Microsoft", LogEventLevel.Information)
-            .MinimumLevel.Override("Microsoft.EntityFrameworkCore", LogEventLevel.Warning)
-            .Enrich.FromLogContext()
-            .WriteTo.Async(c => c.File("Logs/logs.txt"))
-            .WriteTo.Async(c => c.Console())
-            .CreateLogger();
-
-        try
-        {
-            Log.Information("Starting web host.");
-            var builder = WebApplication.CreateBuilder(args);
-            builder.Host.AddAppSettingsSecretsJson()
-                .UseAutofac()
-                .UseSerilog();
-            await builder.AddApplicationAsync<searchWebModule>();
-            var app = builder.Build();
-            await app.InitializeApplicationAsync();
-            await app.RunAsync();
-            return 0;
-        }
-        catch (Exception ex)
-        {
-            if (ex is HostAbortedException)
-            {
-                throw;
-            }
-
-            Log.Fatal(ex, "Host terminated unexpectedly!");
-            return 1;
-        }
-        finally
-        {
-            Log.CloseAndFlush();
-        }
+        var host = Host.CreateDefaultBuilder(args)
+                       .ConfigureWebHostDefaults(webBuilder =>
+                       {
+                           webBuilder.UseStartup<Startup>();
+                       })
+                       .ConfigureServices(services =>
+                       {
+                           services.AddRazorPages();
+                           services.AddServerSideBlazor()
+                                   .AddHubOptions(options =>
+                                   {
+                                       options.EnableDetailedErrors = true;
+                                       options.MaximumReceiveMessageSize = 10 * 1024 * 1024;
+                                   });
+                           services.Configure<WebEncoderOptions>(options =>
+                           {
+                               options.TextEncoderSettings = new TextEncoderSettings(UnicodeRanges.All);
+                           });
+                           services.AddHttpClient("api", x =>
+                           {
+                               x.BaseAddress = new Uri("https://api.meowv.com");
+                           });
+                       });
+        await host.Build().RunAsync();
     }
 }
